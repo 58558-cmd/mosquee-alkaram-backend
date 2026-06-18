@@ -6,6 +6,7 @@ import be.alkaram.mosquee.repository.ConfigSiteRepository;
 import be.alkaram.mosquee.repository.DonRepository;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
+import com.stripe.model.Invoice;
 import com.stripe.model.PaymentIntent;
 import com.stripe.net.Webhook;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,7 +47,7 @@ public class StripeWebhookController {
             return ResponseEntity.badRequest().body("Invalid signature");
         }
 
-        // Traiter uniquement les paiements réussis
+        // Traiter les paiements réussis (don unique)
         if ("payment_intent.succeeded".equals(event.getType())) {
             PaymentIntent intent = (PaymentIntent) event.getDataObjectDeserializer()
                     .getObject().orElse(null);
@@ -60,12 +61,32 @@ public class StripeWebhookController {
                             don.setStatut("completed");
                             don.setStripeSessionId(intent.getId());
                             donRepo.save(don);
-
-                            // Mettre à jour la cagnotte
                             updateCagnotte(don);
                         }
                     });
                 }
+            }
+        }
+
+        // Traiter les paiements réussis (don mensuel — première facture et
+        // renouvellements)
+        if ("invoice.payment_succeeded".equals(event.getType())) {
+            Invoice invoice = (Invoice) event.getDataObjectDeserializer()
+                    .getObject().orElse(null);
+
+            if (invoice != null && invoice.getSubscription() != null) {
+                String subscriptionId = invoice.getSubscription();
+                donRepo.findByStripeSessionId(subscriptionId).ifPresent(don -> {
+                    // Pour le premier paiement, marquer completed et créditer la cagnotte
+                    if (!"completed".equals(don.getStatut())) {
+                        don.setStatut("completed");
+                        donRepo.save(don);
+                        updateCagnotte(don);
+                    } else {
+                        // Renouvellement mensuel : créditer à nouveau la cagnotte
+                        updateCagnotte(don);
+                    }
+                });
             }
         }
 

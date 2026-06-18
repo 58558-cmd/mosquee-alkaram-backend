@@ -7,11 +7,14 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface DonRepository extends JpaRepository<Don, Long> {
 
     List<Don> findByStatutOrderByDateCreationDesc(String statut);
+
+    Optional<Don> findByStripeSessionId(String stripeSessionId);
 
     @Query("SELECT SUM(d.montant) FROM Don d WHERE d.statut = 'completed'")
     BigDecimal sumMontantCompleted();
